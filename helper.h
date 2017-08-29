@@ -3,15 +3,7 @@
 
 #include "bal.grpc.pb.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-    extern void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response);
-    extern int startAgent(int argc, char **argv);
-
-#ifdef __cplusplus
-}
-#endif
+extern void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response);
+extern int startAgent(int argc, char **argv);
 
 #endif

@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <sstream>
 #include <memory>
 #include <string>
 #include <signal.h>
@@ -12,12 +13,76 @@
 #include <grpc++/server_builder.h>
 #include <grpc++/server_context.h>
 #include <grpc++/security/server_credentials.h>
-
 #include "helper.h"
+#include "stack.h"
 
 #define BCM_DIR "/opt/bcm68620/release.bin.agent"
 
 #define BAL_CLI bal_cli_fds[1]
+
+#define CHECK_ADMIN(setreq, hdr, cfg, data) ( (setreq)->has_##hdr() && (setreq)->has_##cfg() && (setreq)->cfg().has_##data() )
+#define STACK_ADMIN(stack, setreq, hdr, cfg, data) do {                 \
+    std::string _a(admin_state_map[ (int)((setreq)->cfg().data().admin_state()) ]); \
+    std::string _o(obj_type_map[ (int)( (setreq)->hdr().obj_type() ) ]); \
+    (stack).Push(_a);                                                   \
+    (stack).Push(" admin_state=");                                      \
+    (stack).Push(_o);                                                   \
+    (stack).Push("set object=");                                        \
+}while(0)
+
+#define ACTIVATE_PON_NNI(setreq, hdr, interface) ( (setreq)->has_##hdr() && (setreq)->has_##interface() && (setreq)->interface().has_key() && (setreq)->interface().has_data() )
+#define STACK_PON_NNI(stack, setreq, hdr, interface) do {               \
+    std::string _a(admin_state_map[ (int)((setreq)->interface().data().admin_state()) ]); \
+    std::string _o(obj_type_map[ (int)( (setreq)->hdr().obj_type() ) ]); \
+    std::string _i(intf_type_map[ (int) ( (setreq)->interface().key().intf_type() ) ]); \
+    std::string _t(transceiver_type_map[ (int) ( (setreq)->interface().data().transceiver_type() ) ]); \
+    (stack).Push(_t);                                                   \
+    (stack).Push(" transceiver_type=");                                 \
+    (stack).Push(_a);                                                   \
+    (stack).Push(" admin_state=");                                      \
+    (stack).Push(_i);                                                   \
+    (stack).Push(" intf_type=");                                        \
+    (stack).Push(std::to_string( (setreq)->interface().key().intf_id() ) ); \
+    (stack).Push(" intf_id=");                                          \
+    (stack).Push(_o);                                                   \
+    (stack).Push("set object=");                                        \
+}while(0)
+
+#define ACTIVATE_ONU(setreq, hdr, terminal) ( (setreq)->has_##hdr() && (setreq)->has_##terminal() && (setreq)->terminal().has_key() && (setreq)->terminal().has_data() && (setreq)->terminal().data().has_serial_number() )
+#define STACK_ONU(stack, setreq, hdr, terminal) do {                    \
+    std::string _a(admin_state_map[ (int)((setreq)->terminal().data().admin_state()) ]); \
+    std::string _o(obj_type_map[ (int)( (setreq)->hdr().obj_type() ) ]); \
+    (stack).Push( (setreq)->terminal().data().registration_id() );      \
+    (stack).Push(" registration_id.arr=");                              \
+    (stack).Push( (setreq)->terminal().data().serial_number().vendor_specific()); \
+    (stack).Push(" serial_number.vendor_specific=");                    \
+    (stack).Push( (setreq)->terminal().data().serial_number().vendor_id()); \
+    (stack).Push(" serial_number.vendor_id=");                          \
+    (stack).Push(_a);                                                   \
+    (stack).Push(" admin_state=");                                      \
+    (stack).Push(std::to_string( (setreq)->terminal().key().sub_term_id() ) ); \
+    (stack).Push(" sub_term_id=");                                      \
+    (stack).Push(_o);                                                   \
+    (stack).Push("set object=");                                        \
+}while(0)
+
+#define CHECK_PACKET_OUT(setreq, packet) ( (setreq)->has_##packet() && (setreq)->packet().has_data() && (setreq)->packet().has_key() && (setreq)->packet().key().has_packet_send_dest() && (setreq)->packet().key().packet_send_dest().has_sub_term() )
+#define STACK_PACKET_OUT(stack, setreq, packet) do {                    \
+    std::string _f(flow_type_map[ (int)( (setreq)->packet().data().flow_type() ) ]); \
+    (stack).Push( (setreq)->packet().data().pkt() );                    \
+    (stack).Push(" pkt=");                                              \
+    (stack).Push(std::to_string( (setreq)->packet().data().intf_id()) ); \
+    (stack).Push(" intf_id=");                                          \
+    (stack).Push(_f);                                                   \
+    (stack).Push(" flow_type=");                                        \
+    (stack).Push(std::to_string( (setreq)->packet().key().packet_send_dest().sub_term().intf_id())); \
+    (stack).Push(" packet_send_dest.int_id=");                          \
+    (stack).Push(std::to_string((setreq)->packet().key().packet_send_dest().sub_term().sub_term_uni())); \
+    (stack).Push(" packet_send_dest.sub_term_uni=");                    \
+    (stack).Push(std::to_string((setreq)->packet().key().packet_send_dest().sub_term().sub_term_id())); \
+    (stack).Push(" packet_send_dest.sub_term_id=");                     \
+    (stack).Push("set object=packet reserved=0 packet_send_dest.type=sub_term"); \
+}while(0)
 
 static const char *obj_type_map[] = { "access_terminal", "flow", "group", "interface", "packet",
                                       "subscriber_terminal", "tm_queue", "tm_sched" };
@@ -32,66 +97,34 @@ static const char *transceiver_type_map[] = {"gpon_sps_43_48", "gpon_sps_sog_432
                                                  "xgpon_lth_7226_pc", "xgpon_lth_5302_pc",
                                                  "xgpon_lth_7226_a_pc_plus"};
 
+static const char *flow_type_map[] = {"upstream", "downstream", "broadcast", "multicast"};
 static int bal_cli_fds[2];
 
 void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response) {
     char cli_cmd[200] = {0};
-    BalErrno err = BAL_ERR_PARM;
+    stack::Stack <std::string> stk;
+    BalErrno err = BAL_ERR_OK;
     response->set_err(err);
-    if(cfg->has_hdr() && cfg->has_cfg() && cfg->cfg().has_data()) {
-        if((int)cfg->hdr().obj_type() >= sizeof(obj_type_map)/sizeof(obj_type_map[0])) {
-            std::cerr << "Unknown object type " << cfg->hdr().obj_type() << std::endl;
-            return;
-        }
-        if((int)cfg->cfg().data().admin_state() >= sizeof(admin_state_map)/sizeof(admin_state_map[0])) {
-            std::cerr << "Unknown admin state transition " << cfg->cfg().data().admin_state() << std::endl;
-            return;
-        }
-        snprintf(cli_cmd, sizeof(cli_cmd), "set object=%s admin_state=%s\n",
-                 obj_type_map[(int)cfg->hdr().obj_type()],
-                 admin_state_map[(int)cfg->cfg().data().admin_state()]);
-    } else if(cfg->has_hdr() && cfg->has_interface()) {
-        //activate pon/nni interface
-        if((int)cfg->hdr().obj_type() >= sizeof(obj_type_map)/sizeof(obj_type_map[0])) {
-            std::cerr << "Unknown object type " << cfg->hdr().obj_type() << std::endl;
-            return;
-        }
-        if(!cfg->interface().has_key() || !cfg->interface().has_data()) {
-            std::cerr << "No interface key or data specified" << std::endl;
-            return;
-        }
-        snprintf(cli_cmd, sizeof(cli_cmd), "set object=%s intf_id=%d intf_type=%s admin_state=%s transceiver_type=%s\n",
-                 obj_type_map[(int)cfg->hdr().obj_type()],
-                 cfg->interface().key().intf_id(),
-                 intf_type_map[(int)cfg->interface().key().intf_type()],
-                 admin_state_map[(int)cfg->interface().data().admin_state()],
-                 transceiver_type_map[(int)cfg->interface().data().transceiver_type()]
-                 );
-    } else if(cfg->has_hdr() && cfg->has_terminal()) {
-        //activate onu
-        if((int)cfg->hdr().obj_type() >= sizeof(obj_type_map)/sizeof(obj_type_map[0])) {
-            std::cerr << "Unknown object type " << cfg->hdr().obj_type() << std::endl;
-            return;
-        }
-        if(!cfg->terminal().has_key() || !cfg->terminal().has_data()) {
-            std::cerr << "No terminal key/data specified " << std::endl;
-            return;
-        }
-        if(!cfg->terminal().data().has_serial_number()) {
-            std::cerr << "No serial number in request" << std::endl;
-            return;
-        }
-        snprintf(cli_cmd, sizeof(cli_cmd),
-                 "set object=%s sub_term_id=%d admin_state=%s serial_number.vendor_id=%s serial_number.vendor_specific=%s registration_id.arr=%s\n",
-                 obj_type_map[(int)cfg->hdr().obj_type()],
-                 cfg->terminal().key().sub_term_id(),
-                 admin_state_map[(int)cfg->terminal().data().admin_state()],
-                 cfg->terminal().data().serial_number().vendor_id().c_str(),
-                 cfg->terminal().data().serial_number().vendor_specific().c_str(),
-                 cfg->terminal().data().registration_id().c_str());
+    if(CHECK_ADMIN(cfg, hdr, cfg, data)) {
+        STACK_ADMIN(stk, cfg, hdr, cfg, data);
     }
-    response->set_err(BAL_ERR_OK);
-    if(cli_cmd[0]) {
+    else if(ACTIVATE_PON_NNI(cfg, hdr, interface)) {
+        STACK_PON_NNI(stk, cfg, hdr, interface);
+    }
+    else if(ACTIVATE_ONU(cfg, hdr, terminal)) {
+        STACK_ONU(stk, cfg, hdr, terminal);
+    }
+    else if(CHECK_PACKET_OUT(cfg, packet)) {
+        STACK_PACKET_OUT(stk, cfg, packet);
+    }
+    else {
+        err = BAL_ERR_PARM;
+    }
+    response->set_err(err);
+    if(err == BAL_ERR_OK) {
+        std::ostringstream str_stream;
+        str_stream << stk;
+        snprintf(cli_cmd, sizeof(cli_cmd), "%s\n", str_stream.str().c_str());
         std::cout << "CLI command translated: " << cli_cmd << std::endl;
         write(BAL_CLI, cli_cmd, strlen(cli_cmd));
     }
