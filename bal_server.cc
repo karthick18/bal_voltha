@@ -22,7 +22,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
-
+#include <future>
 #include <grpc/grpc.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -40,10 +40,14 @@ using grpc::ServerReaderWriter;
 using grpc::ServerWriter;
 using grpc::Status;
 
+static BalErrno BalAccTermInd(BalIndicationsClient *bal_ind_clnt,
+                              const std::string device_id,
+                              bool activation_status);
+
 class BalServiceImpl final : public Bal::Service {
     private:
     BalIndicationsClient *bal_ind_clnt;
-
+    std::future<BalErrno> bal_future;
     public:
     Status BalApiInit(ServerContext* context, const BalInit* request, BalErr* response) {
         std::cout << "Server got API init from:" << context->peer() << std::endl;
@@ -68,13 +72,9 @@ class BalServiceImpl final : public Bal::Service {
         std::cout << "Server got CFG Set for device id " << request->device_id() << std::endl;
         balCfgSetCmdToCli(request, response);
         if(bal_ind_clnt != nullptr) {
-            if(response->err() == BAL_ERR_OK) {
-                bal_ind_clnt->BalAccTermInd(request->device_id(), true);
-            }
-            else
-            {
-                bal_ind_clnt->BalAccTermInd(request->device_id(), false);
-            }
+            //async bal indicator call
+            bool status = response->err() == BAL_ERR_OK ? true : false;
+            bal_future = std::async(BalAccTermInd, bal_ind_clnt, request->device_id(), status);
         }
         return Status::OK;
     }
@@ -90,6 +90,13 @@ class BalServiceImpl final : public Bal::Service {
         return Status::OK;
     }
 };
+
+static BalErrno BalAccTermInd(BalIndicationsClient *bal_ind_clnt,
+                            const std::string device_id,
+                            bool activation_status) {
+    return bal_ind_clnt->BalAccTermInd(device_id, activation_status);
+}
+
 
 void RunServer() {
   std::string server_address("0.0.0.0:50051");

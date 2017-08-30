@@ -19,11 +19,8 @@ BalErrno BalIndicationsClient::BalAccTermInd(const std::string device_id, bool a
     } else {
         request.mutable_access_term_ind()->mutable_data()->set_admin_state(BAL_STATE_DOWN);
     }
-    //disabling for now
-    return BAL_ERR_OK;
     Status status = stub_->BalAccTermInd(&context, request, &response);
     if(status.ok()) {
-        std::cout << "Success " << std::endl;
         return response.err();
     }
     std::cerr << status.error_code() << ": " << status.error_message() << std::endl;
