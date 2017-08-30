@@ -74,7 +74,7 @@ class BalServiceImpl final : public Bal::Service {
         if(bal_ind_clnt != nullptr) {
             //async bal indicator call
             bool status = response->err() == BAL_ERR_OK ? true : false;
-            bal_future = std::async(BalAccTermInd, bal_ind_clnt, request->device_id(), status);
+            bal_future = std::async(std::launch::async, BalAccTermInd, bal_ind_clnt, request->device_id(), status);
         }
         return Status::OK;
     }
