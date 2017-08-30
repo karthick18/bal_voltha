@@ -30,6 +30,7 @@
 #include <grpc++/security/server_credentials.h>
 #include "bal.grpc.pb.h"
 #include "helper.h"
+#include "bal_indications.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -40,10 +41,20 @@ using grpc::ServerWriter;
 using grpc::Status;
 
 class BalServiceImpl final : public Bal::Service {
- public:
+    private:
+    BalIndicationsClient *bal_ind_clnt;
+
+    public:
     Status BalApiInit(ServerContext* context, const BalInit* request, BalErr* response) {
-        std::cout << "Server got API init" << std::endl;
-        response->set_err(BAL_ERR_OK);
+        std::cout << "Server got API init from:" << context->peer() << std::endl;
+        bal_ind_clnt = balIndicationsInit(context->peer());
+        if(bal_ind_clnt == nullptr) {
+            response->set_err(BAL_ERR_COMM_FAIL);
+        }
+        else
+        {
+            response->set_err(BAL_ERR_OK);
+        }
         return Status::OK;
     }
 
@@ -54,8 +65,17 @@ class BalServiceImpl final : public Bal::Service {
     }
 
     Status BalCfgSet(ServerContext* context, const BalCfg* request, BalErr* response) {
-        std::cout << "Server got CFG Set" << std::endl;
+        std::cout << "Server got CFG Set for device id " << request->device_id() << std::endl;
         balCfgSetCmdToCli(request, response);
+        if(bal_ind_clnt != nullptr) {
+            if(response->err() == BAL_ERR_OK) {
+                bal_ind_clnt->BalAccTermInd(request->device_id(), true);
+            }
+            else
+            {
+                bal_ind_clnt->BalAccTermInd(request->device_id(), false);
+            }
+        }
         return Status::OK;
     }
 

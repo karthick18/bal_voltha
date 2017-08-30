@@ -38,7 +38,7 @@ vpath %.proto $(PROTOS_PATH)
 
 all: system-check bal_voltha_server
 
-bal_voltha_server: bal.pb.o bal.grpc.pb.o bal_server.o helper.o
+bal_voltha_server: bal.pb.o bal.grpc.pb.o bal_server.o bal_indications.o helper.o
 	$(CXX) $^ $(LDFLAGS) -o $@
 
 %.grpc.pb.cc: %.proto
