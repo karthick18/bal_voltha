@@ -9,7 +9,9 @@ This is the BAL Voltha GRPC server side.
 
 It was written with the Voltha asfvolt16_olt adapter grpc client code as the reference :)
 
-It needs the Radisys Broadcom(bcm) agent for the OLT installed on the target accton device. 
+It also includes a bal grpc indications client to talk back to voltha.
+
+It needs the Radisys Broadcom(bcm) agent for the OLT installed on the target accton device.
 (volt_2.2.0.0+accton1.0-1_amd64.deb)
 
 This GRPC voltha server translates the GRPC calls to BAL cli commands.
@@ -26,7 +28,9 @@ b) activate_onu (untested but should work)
 
 c) activate_pon (untested but should work)
 
-So activate_olt request for asfvolt16_olt works. But the voltha client side still waits for something more.
+So activate_olt request for asfvolt16_olt works.
+
+The indications client as of now sends access term indicator on activation complete to voltha.
 
 The approach is pretty simple w.r.t directly utilizing BAL cli over translating incoming GRPC bal request to BAL messages to send another RPC (hare-brained approach).
 
