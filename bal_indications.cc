@@ -27,16 +27,7 @@ BalErrno BalIndicationsClient::BalAccTermInd(const std::string device_id, bool a
     return BAL_ERR_COMM_FAIL;
 }
 
-BalIndicationsClient *balIndicationsInit(std::string peer_context) {
-    auto start = peer_context.find(":");
-    if (start == std::string::npos) {
-        return nullptr;
-    }
-    auto end = peer_context.find(":", start+1);
-    if(end == std::string::npos) {
-        return nullptr;
-    }
-    std::string peer_host = peer_context.substr(start+1, end - start - 1) + ":60001";
+BalIndicationsClient *balIndicationsInit(std::string peer_host) {
     std::cout << "GRPC Indications Server at " << peer_host << std::endl;
     return new BalIndicationsClient(grpc::CreateChannel(peer_host,
                                                         grpc::InsecureChannelCredentials()));

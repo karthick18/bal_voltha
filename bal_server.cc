@@ -23,6 +23,8 @@
 #include <memory>
 #include <string>
 #include <future>
+#include <iterator>
+#include <map>
 #include <grpc/grpc.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -40,42 +42,107 @@ using grpc::ServerReaderWriter;
 using grpc::ServerWriter;
 using grpc::Status;
 
+#define BAL_GRPC_PORT_DEFAULT 50051
+
 static BalErrno BalAccTermInd(BalIndicationsClient *bal_ind_clnt,
                               const std::string device_id,
                               bool activation_status);
 
 class BalServiceImpl final : public Bal::Service {
     private:
-    BalIndicationsClient *bal_ind_clnt;
-    std::future<BalErrno> bal_future;
+    const std::string bal_indications_grpc_port = "60001";
+    std::map<std::string, BalIndicationsClient*> bal_indications_map;
+
+    std::string GetBalIndicationsHost(const std::string peer_context) {
+        auto start = peer_context.find(":");
+        if (start == std::string::npos) {
+            return nullptr;
+        }
+        auto end = peer_context.find(":", start+1);
+        if(end == std::string::npos) {
+            return nullptr;
+        }
+        std::string peer_host = peer_context.substr(start+1, end - start - 1) + ":" + bal_indications_grpc_port;
+        return peer_host;
+    }
+
+    BalIndicationsClient *BalIndicationsMapPut(const std::string peer) {
+        BalIndicationsClient *bal_ind_clnt = nullptr;
+        std::map<std::string, BalIndicationsClient*>::iterator it;
+        bal_ind_clnt = BalIndicationsMapGet(peer);
+        if(bal_ind_clnt == nullptr) {
+            bal_ind_clnt = balIndicationsInit(peer);
+            if(bal_ind_clnt != nullptr) {
+                bal_indications_map[peer] = bal_ind_clnt;
+            }
+        }
+        return bal_ind_clnt;
+    }
+
+    BalIndicationsClient *BalIndicationsMapGet(const std::string peer) {
+        std::map<std::string, BalIndicationsClient*>::iterator it;
+        it = bal_indications_map.find(peer);
+        if(it != bal_indications_map.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
     public:
     Status BalApiInit(ServerContext* context, const BalInit* request, BalErr* response) {
-        std::cout << "Server got API init from:" << context->peer() << std::endl;
-        bal_ind_clnt = balIndicationsInit(context->peer());
+        BalIndicationsClient *bal_ind_clnt;
+        const std::string peer = GetBalIndicationsHost(context->peer());
+        std::map<std::string, BalIndicationsClient*>::iterator it;
+        std::cout << "Server got API init from:" << peer << std::endl;
+        bal_ind_clnt = BalIndicationsMapPut(peer);
         if(bal_ind_clnt == nullptr) {
             response->set_err(BAL_ERR_COMM_FAIL);
         }
-        else
-        {
+        else {
             response->set_err(BAL_ERR_OK);
         }
         return Status::OK;
     }
 
     Status BalApiFinish(ServerContext* context, const BalCfg* request, BalErr* response) {
-        std::cout << "Server got API finish" << std::endl;
+        BalIndicationsClient *bal_ind_clnt;
+        const std::string peer = GetBalIndicationsHost(context->peer());
+        std::cout << "Server got API finish from peer:" << peer << std::endl;
+        //remove the peer from the indications map
+        bal_ind_clnt = BalIndicationsMapGet(peer);
+        if(bal_ind_clnt != nullptr) {
+            bal_indications_map.erase(peer);
+            if(bal_ind_clnt->future_ready) {
+                bal_ind_clnt->future.get();
+            }
+            delete bal_ind_clnt;
+        }
         response->set_err(BAL_ERR_OK);
         return Status::OK;
     }
 
     Status BalCfgSet(ServerContext* context, const BalCfg* request, BalErr* response) {
-        std::cout << "Server got CFG Set for device id " << request->device_id() << std::endl;
-        balCfgSetCmdToCli(request, response);
-        if(bal_ind_clnt != nullptr) {
-            //async bal indicator call
-            bool status = response->err() == BAL_ERR_OK ? true : false;
-            bal_future = std::async(std::launch::async, BalAccTermInd, bal_ind_clnt, request->device_id(), status);
+        BalIndicationsClient *bal_ind_clnt;
+        const std::string device_id = request->device_id();
+        const std::string peer = GetBalIndicationsHost(context->peer());
+        std::cout << "Server got CFG Set for device id " << device_id << std::endl;
+        bal_ind_clnt = BalIndicationsMapGet(peer);
+        if(bal_ind_clnt == nullptr) {
+            std::cerr << "Bal Indications client not found for peer " << peer << std::endl;
+            std::cerr << "Bal API Init seems to have been never called for peer " << peer << std::endl;
+            response->set_err(BAL_ERR_INVALID_OP);
+            return Status::OK;
         }
+        balCfgSetCmdToCli(request, response);
+        //async bal indicator call
+        bool status = response->err() == BAL_ERR_OK ? true : false;
+        if(bal_ind_clnt->future_ready) {
+            //block on the last set to finish before continuing
+            bal_ind_clnt->future_ready = false;
+            bal_ind_clnt->future.get();
+        }
+        bal_ind_clnt->future = std::async(std::launch::async, BalAccTermInd, bal_ind_clnt, device_id, status);
+        bal_ind_clnt->future_ready = true;
         return Status::OK;
     }
 
@@ -98,10 +165,8 @@ static BalErrno BalAccTermInd(BalIndicationsClient *bal_ind_clnt,
 }
 
 
-void RunServer() {
-  std::string server_address("0.0.0.0:50051");
+void RunServer(const std::string server_address) {
   BalServiceImpl service;
-
   ServerBuilder builder;
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   builder.RegisterService(&service);
@@ -111,7 +176,13 @@ void RunServer() {
 }
 
 int main(int argc, char** argv) {
+    std::string server_address = "0.0.0.0";
+    int port = BAL_GRPC_PORT_DEFAULT;
+    if(argc > 1) {
+        port = atoi(argv[1]);
+    }
+    server_address += ":" + std::to_string(port);
     startAgent(argc, argv);
-    RunServer();
+    RunServer(server_address);
     return 0;
 }
