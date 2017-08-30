@@ -84,6 +84,34 @@
     (stack).Push("set object=packet reserved=0 packet_send_dest.type=sub_term"); \
 }while(0)
 
+#define CHECK_OMCI_REQ(setreq, packet) ( (setreq)->has_##packet() && (setreq)->packet().has_data() && (setreq)->packet().has_key() && (setreq)->packet().key().has_packet_send_dest() && (setreq)->packet().key().packet_send_dest().has_itu_omci_channel() )
+
+#define STACK_OMCI_REQ(stack, setreq, packet) do {                      \
+    (stack).Push("bal/");                                               \
+    (stack).Push("..\n");                                               \
+    (stack).Push(" admin_state=up\n");                                  \
+    (stack).Push(std::to_string( (setreq)->packet().key().packet_send_dest().itu_omci_channel().sub_term_id())); \
+    (stack).Push(" sub_term_id=");                                      \
+    (stack).Push(std::to_string( (setreq)->packet().key().packet_send_dest().itu_omci_channel().intf_id()) ); \
+    (stack).Push(" intf_id=");                                          \
+    (stack).Push("set object=sub_term");                                \
+    (stack).Push("omci/\n");                                            \
+    (stack).Push("..\n");                                               \
+}while(0)
+
+#define STACK_OMCI_SAMPLE(stack) do {           \
+    (stack).Push("bal/");                       \
+    (stack).Push("..\n");                       \
+    (stack).Push(" admin_state=up\n");          \
+    (stack).Push(std::to_string(0));            \
+    (stack).Push(" sub_term_id=");              \
+    (stack).Push(std::to_string(0));            \
+    (stack).Push(" intf_id=");                  \
+    (stack).Push("set object=sub_term");        \
+    (stack).Push("omci/\n");                    \
+    (stack).Push("..\n");                       \
+}while(0)
+
 static const char *obj_type_map[] = { "access_terminal", "flow", "group", "interface", "packet",
                                       "subscriber_terminal", "tm_queue", "tm_sched" };
 
@@ -101,7 +129,7 @@ static const char *flow_type_map[] = {"upstream", "downstream", "broadcast", "mu
 static int bal_cli_fds[2];
 
 void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response) {
-    char cli_cmd[200] = {0};
+    char cli_cmd[1024] = {0};
     stack::Stack <std::string> stk;
     BalErrno err = BAL_ERR_OK;
     response->set_err(err);
@@ -116,6 +144,9 @@ void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response) {
     }
     else if(CHECK_PACKET_OUT(cfg, packet)) {
         STACK_PACKET_OUT(stk, cfg, packet);
+    }
+    else if(CHECK_OMCI_REQ(cfg, packet)) {
+        STACK_OMCI_REQ(stk, cfg, packet);
     }
     else {
         err = BAL_ERR_PARM;
@@ -132,6 +163,16 @@ void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response) {
 
 static void enter_bal(void) {
     write(BAL_CLI, "bal/\n", 5);
+}
+
+__attribute__((unused)) static void test_omci(void) {
+    stack::Stack <std::string> stk;
+    std::ostringstream str_stream;
+    char cli_cmd[100];
+    STACK_OMCI_SAMPLE(stk);
+    str_stream << stk;
+    snprintf(cli_cmd, sizeof(cli_cmd), "%s\n", str_stream.str().c_str());
+    write(BAL_CLI, cli_cmd, strlen(cli_cmd));
 }
 
 __attribute__((unused)) static int cmdloop(int child_pid, int wfd) {
