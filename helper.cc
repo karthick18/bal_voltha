@@ -52,14 +52,19 @@
 #define STACK_ONU(stack, setreq, hdr, terminal) do {                    \
     std::string _a(admin_state_map[ (int)((setreq)->terminal().data().admin_state()) ]); \
     std::string _o(obj_type_map[ (int)( (setreq)->hdr().obj_type() ) ]); \
+    const char  *_vc = (setreq)->terminal().data().serial_number().vendor_id().c_str(); \
+    char vendor[10];                                                    \
+    snprintf(vendor, sizeof(vendor), "%x%x%x%x", _vc[0], _vc[1], _vc[2], _vc[3]); \
     (stack).Push( (setreq)->terminal().data().registration_id() );      \
     (stack).Push(" registration_id.arr=");                              \
     (stack).Push( (setreq)->terminal().data().serial_number().vendor_specific()); \
     (stack).Push(" serial_number.vendor_specific=");                    \
-    (stack).Push( (setreq)->terminal().data().serial_number().vendor_id()); \
+    std::string _vid(vendor);                                           \
+    (stack).Push(_vid);                                                 \
     (stack).Push(" serial_number.vendor_id=");                          \
     (stack).Push(_a);                                                   \
     (stack).Push(" admin_state=");                                      \
+    (stack).Push(" intf_id=0");                                         \
     (stack).Push(std::to_string( (setreq)->terminal().key().sub_term_id() ) ); \
     (stack).Push(" sub_term_id=");                                      \
     (stack).Push(_o);                                                   \
@@ -117,7 +122,7 @@ static const char *obj_type_map[] = { "access_terminal", "flow", "group", "inter
 
 static const char *admin_state_map[] = { "invalid", "up", "down", "testing" };
 
-static const char *intf_type_map[] = { "nni", "pon", "epon_1g", "epon_10g" };
+static const char *intf_type_map[] = { "nni", "pon", "pon", "pon" }; //"epon_1g", "epon_10g" };
 
 static const char *transceiver_type_map[] = {"gpon_sps_43_48", "gpon_sps_sog_4321",
                                                  "gpon_lte_3680_m", "gpon_source_photonics",
