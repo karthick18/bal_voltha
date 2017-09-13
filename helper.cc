@@ -64,7 +64,8 @@
     (stack).Push(" serial_number.vendor_id=");                          \
     (stack).Push(_a);                                                   \
     (stack).Push(" admin_state=");                                      \
-    (stack).Push(" intf_id=0");                                         \
+    (stack).Push(std::to_string( (setreq)->terminal().key().intf_id() ) ); \
+    (stack).Push(" intf_id=");                                          \
     (stack).Push(std::to_string( (setreq)->terminal().key().sub_term_id() ) ); \
     (stack).Push(" sub_term_id=");                                      \
     (stack).Push(_o);                                                   \
@@ -122,7 +123,7 @@ static const char *obj_type_map[] = { "access_terminal", "flow", "group", "inter
 
 static const char *admin_state_map[] = { "invalid", "up", "down", "testing" };
 
-static const char *intf_type_map[] = { "nni", "pon", "pon", "pon" }; //"epon_1g", "epon_10g" };
+static const char *intf_type_map[] = { "nni", "pon", "epon_1g", "epon_10g" };
 
 static const char *transceiver_type_map[] = {"gpon_sps_43_48", "gpon_sps_sog_4321",
                                                  "gpon_lte_3680_m", "gpon_source_photonics",
