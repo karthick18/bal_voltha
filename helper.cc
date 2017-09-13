@@ -28,7 +28,8 @@ typedef enum BalCfgSetCmd {
     CFG_ONU,
     CFG_PACKET_OUT,
     CFG_OMCI_REQ,
-    CFG_FLOW
+    CFG_FLOW,
+    CFG_SCHEDULER,
 } BalCfgSetCmd;
 
 #define CHECK_ADMIN(setreq, hdr, cfg, data) ( (setreq)->has_##hdr() && (setreq)->has_##cfg() && (setreq)->cfg().has_##data() )
@@ -191,6 +192,41 @@ typedef enum BalCfgSetCmd {
     (stack).Push("set object=");                                        \
 }while(0)
 
+#define CHECK_SCHEDULER(setreq, hdr, sched) ( (setreq)->has_##hdr() && (setreq)->has_##sched() && (setreq)->sched().has_key() )
+#define STACK_SCHEDULER(stack, setreq, hdr, sched) do {                 \
+    std::string _dir( sched_dir_map[ (int) (setreq)->sched().key().dir() ] ); \
+    std::string _o( obj_type_map [ (int) (setreq)->hdr().obj_type() ] ); \
+    std::string _owner_type( owner_type_map [ (int) (setreq)->sched().data().owner().type() ] ); \
+    std::string _sched_type( sched_type_map [ (int) (setreq)->sched().data().sched_type() ] ); \
+    (stack).Push(_sched_type);                                          \
+    (stack).Push(" sched_type=");                                       \
+    if( (setreq)->sched().data().owner().type() == BAL_TM_SCHED_OWNER_TYPE_AGG_PORT ) { \
+        if( (setreq)->sched().data().owner().agg_port().presence_mask() & BAL_TM_SCHED_OWNER_AGG_PORT_ID_SUB_TERM_ID ) { \
+            (stack).Push(std::to_string( (setreq)->sched().data().owner().agg_port().sub_term_id())); \
+            (stack).Push(" owner.sub_term_id=");                        \
+        }                                                               \
+        if( (setreq)->sched().data().owner().agg_port().presence_mask() & BAL_TM_SCHED_OWNER_AGG_PORT_ID_AGG_PORT_ID ) { \
+            (stack).Push(std::to_string( (setreq)->sched().data().owner().agg_port().agg_port_id() )); \
+            (stack).Push(" owner.agg_port_id=");                        \
+        }                                                               \
+        if( (setreq)->sched().data().owner().agg_port().presence_mask() & BAL_TM_SCHED_OWNER_AGG_PORT_ID_INTF_ID ) { \
+            (stack).Push(std::to_string( (setreq)->sched().data().owner().agg_port().intf_id())); \
+            (stack).Push(" owner.intf_id=");                            \
+        }                                                               \
+    }                                                                   \
+    (stack).Push(_owner_type);                                          \
+    (stack).Push( "owner.type=");                                       \
+    (stack).Push(std::to_string( (setreq)->sched().data().num_priorities() ) ); \
+    (stack).Push( "num_priorities=");                                   \
+    (stack).Push(std::to_string( (setreq)->sched().key().id() ) );      \
+    (stack).Push(" id=");                                               \
+    (stack).Push(_dir);                                                 \
+    (stack).Push( "dir=");                                              \
+    (stack).Push(_o);                                                   \
+    (stack).Push("set object=");                                        \
+}while(0)
+
+
 #define STACK_OMCI_SAMPLE(stack) do {           \
     (stack).Push("bal/");                       \
     (stack).Push("..\n");                       \
@@ -224,6 +260,10 @@ static const char *pkt_tag_map[] = {"none", "untagged", "single_tag", "double_ta
 static const char *action_mask_map[] =  {"none", "add_outer_tag", "remove_outer_tag", "xlate_outer_tag", "xlate_two_tags",\
                                          "discard_ds_bcast", "discard_ds_unknown", "add_two_tags", "remove_two_tags", "remark_pbits",\
                                          "copy_pbits", "reverse_copy_pbits", "dscp_to_pbits", "trap_to_host"};
+
+static const char *owner_type_map[] = {"undefined", "interface", "sub_term", "agg_port", "uni", "virtual"};
+static const char *sched_type_map[] = {"none", "wfq", "sp", "sp_wfq"};
+static const char *sched_dir_map[] = {"invalid", "us", "ds"};
 
 static int bal_cli_fds[2];
 
@@ -294,6 +334,10 @@ void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response, BalIndicationsClient
     else if(CHECK_FLOW(cfg, hdr, flow)) {
         cmd = CFG_FLOW;
         STACK_FLOW(stk, cfg, hdr, flow);
+    }
+    else if(CHECK_SCHEDULER(cfg, hdr, tm_sched_cfg)) {
+        cmd = CFG_SCHEDULER;
+        STACK_SCHEDULER(stk, cfg, hdr, tm_sched_cfg);
     }
     else {
         err = BAL_ERR_PARM;
