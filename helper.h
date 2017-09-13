@@ -2,8 +2,9 @@
 #define _HELPER_H_
 
 #include "bal.grpc.pb.h"
+#include "bal_indications.h"
 
-extern bool balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response);
+extern void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response, BalIndicationsClient *bal_ind_clnt);
 extern int startAgent(int argc, char **argv);
 
 #endif

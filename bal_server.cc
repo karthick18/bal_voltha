@@ -22,7 +22,6 @@
 #include <iostream>
 #include <memory>
 #include <string>
-#include <future>
 #include <iterator>
 #include <map>
 #include <grpc/grpc.h>
@@ -32,7 +31,6 @@
 #include <grpc++/security/server_credentials.h>
 #include "bal.grpc.pb.h"
 #include "helper.h"
-#include "bal_indications.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -43,10 +41,6 @@ using grpc::ServerWriter;
 using grpc::Status;
 
 #define BAL_GRPC_PORT_DEFAULT 50051
-
-static BalErrno BalAccTermInd(BalIndicationsClient *bal_ind_clnt,
-                              const std::string device_id,
-                              bool activation_status);
 
 class BalServiceImpl final : public Bal::Service {
     private:
@@ -125,7 +119,6 @@ class BalServiceImpl final : public Bal::Service {
         BalIndicationsClient *bal_ind_clnt;
         const std::string device_id = request->device_id();
         const std::string peer = GetBalIndicationsHost(context->peer());
-        bool send_indication;
         std::cout << "Server got CFG Set for device id " << device_id << std::endl;
         bal_ind_clnt = BalIndicationsMapGet(peer);
         if(bal_ind_clnt == nullptr) {
@@ -134,18 +127,7 @@ class BalServiceImpl final : public Bal::Service {
             response->set_err(BAL_ERR_INVALID_OP);
             return Status::OK;
         }
-        send_indication = balCfgSetCmdToCli(request, response);
-        //async bal indicator call
-        bool status = response->err() == BAL_ERR_OK ? true : false;
-        if(send_indication == true && bal_ind_clnt->future_ready) {
-            //block on the last set to finish before continuing
-            bal_ind_clnt->future_ready = false;
-            bal_ind_clnt->future.get();
-        }
-        if(send_indication == true) {
-            bal_ind_clnt->future = std::async(std::launch::async, BalAccTermInd, bal_ind_clnt, device_id, status);
-            bal_ind_clnt->future_ready = true;
-        }
+        balCfgSetCmdToCli(request, response, bal_ind_clnt);
         return Status::OK;
     }
 
@@ -160,13 +142,6 @@ class BalServiceImpl final : public Bal::Service {
         return Status::OK;
     }
 };
-
-static BalErrno BalAccTermInd(BalIndicationsClient *bal_ind_clnt,
-                            const std::string device_id,
-                            bool activation_status) {
-    return bal_ind_clnt->BalAccTermInd(device_id, activation_status);
-}
-
 
 void RunServer(const std::string server_address) {
   BalServiceImpl service;
