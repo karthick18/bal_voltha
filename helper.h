@@ -3,7 +3,7 @@
 
 #include "bal.grpc.pb.h"
 
-extern void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response);
+extern bool balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response);
 extern int startAgent(int argc, char **argv);
 
 #endif

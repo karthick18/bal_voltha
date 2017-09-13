@@ -125,6 +125,7 @@ class BalServiceImpl final : public Bal::Service {
         BalIndicationsClient *bal_ind_clnt;
         const std::string device_id = request->device_id();
         const std::string peer = GetBalIndicationsHost(context->peer());
+        bool send_indication;
         std::cout << "Server got CFG Set for device id " << device_id << std::endl;
         bal_ind_clnt = BalIndicationsMapGet(peer);
         if(bal_ind_clnt == nullptr) {
@@ -133,16 +134,18 @@ class BalServiceImpl final : public Bal::Service {
             response->set_err(BAL_ERR_INVALID_OP);
             return Status::OK;
         }
-        balCfgSetCmdToCli(request, response);
+        send_indication = balCfgSetCmdToCli(request, response);
         //async bal indicator call
         bool status = response->err() == BAL_ERR_OK ? true : false;
-        if(bal_ind_clnt->future_ready) {
+        if(send_indication == true && bal_ind_clnt->future_ready) {
             //block on the last set to finish before continuing
             bal_ind_clnt->future_ready = false;
             bal_ind_clnt->future.get();
         }
-        bal_ind_clnt->future = std::async(std::launch::async, BalAccTermInd, bal_ind_clnt, device_id, status);
-        bal_ind_clnt->future_ready = true;
+        if(send_indication == true) {
+            bal_ind_clnt->future = std::async(std::launch::async, BalAccTermInd, bal_ind_clnt, device_id, status);
+            bal_ind_clnt->future_ready = true;
+        }
         return Status::OK;
     }
 

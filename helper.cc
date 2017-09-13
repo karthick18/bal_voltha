@@ -134,13 +134,15 @@ static const char *transceiver_type_map[] = {"gpon_sps_43_48", "gpon_sps_sog_432
 static const char *flow_type_map[] = {"upstream", "downstream", "broadcast", "multicast"};
 static int bal_cli_fds[2];
 
-void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response) {
+bool balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response) {
     char cli_cmd[1024] = {0};
     stack::Stack <std::string> stk;
     BalErrno err = BAL_ERR_OK;
+    bool send_indication = false;
     response->set_err(err);
     if(CHECK_ADMIN(cfg, hdr, cfg, data)) {
         STACK_ADMIN(stk, cfg, hdr, cfg, data);
+        send_indication = true;
     }
     else if(ACTIVATE_PON_NNI(cfg, hdr, interface)) {
         STACK_PON_NNI(stk, cfg, hdr, interface);
@@ -165,6 +167,7 @@ void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response) {
         std::cout << "CLI command translated: " << cli_cmd << std::endl;
         write(BAL_CLI, cli_cmd, strlen(cli_cmd));
     }
+    return send_indication;
 }
 
 static void enter_bal(void) {
