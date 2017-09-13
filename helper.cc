@@ -22,12 +22,13 @@
 #define BAL_CLI bal_cli_fds[1]
 
 typedef enum BalCfgSetCmd {
-    CFG_UNKNOWN = 0,
-    CFG_ADMIN = 1,
-    CFG_PON_NNI = 2,
-    CFG_ONU = 3,
-    CFG_PACKET_OUT = 4,
-    CFG_OMCI_REQ = 5,
+    CFG_UNKNOWN,
+    CFG_ADMIN,
+    CFG_PON_NNI,
+    CFG_ONU,
+    CFG_PACKET_OUT,
+    CFG_OMCI_REQ,
+    CFG_FLOW
 } BalCfgSetCmd;
 
 #define CHECK_ADMIN(setreq, hdr, cfg, data) ( (setreq)->has_##hdr() && (setreq)->has_##cfg() && (setreq)->cfg().has_##data() )
@@ -115,6 +116,81 @@ typedef enum BalCfgSetCmd {
     (stack).Push("..\n");                                               \
 }while(0)
 
+#define CHECK_FLOW(setreq, hdr, flow) ( (setreq)->has_##hdr() && (setreq)->has_##flow() && (setreq)->flow().has_key() && (setreq)->flow().has_data() )
+#define STACK_FLOW(stack, setreq, hdr, flow) do {                       \
+    std::string _f(flow_type_map[ (int)( (setreq)->flow().key().flow_type() ) ]); \
+    std::string _a(admin_state_map[ (int) ( (setreq)->flow().data().admin_state() ) ]); \
+    std::string _o(obj_type_map[ (int) ( (setreq)->hdr().obj_type() ) ]); \
+    std::string _pkt_tag_type( pkt_tag_map[ mask_to_shift( (uint32) ( (setreq)->flow().data().classifier().pkt_tag_type() ) ) ]); \
+    if( (setreq)->flow().data().has_action() ) {                        \
+        std::string _action_cmd_mask( action_mask_map [ mask_to_shift( (uint32)( (setreq)->flow().data().action().cmds_bitmask())) ] ); \
+        if( (setreq)->flow().data().action().presence_mask() & BAL_ACTION_ID_O_VID ) { \
+            (stack).Push(std::to_string( (setreq)->flow().data().action().o_vid() ) ); \
+            (stack).Push(" action.o_vid=");                             \
+        }                                                               \
+        (stack).Push(_action_cmd_mask);                                 \
+        (stack).Push(" action.cmds_bitmask=");                          \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_PKT_TAG_TYPE ) { \
+        (stack).Push(_pkt_tag_type);                                    \
+        (stack).Push(" classifier.pkt_tag_type=");                      \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_I_VID ) { \
+        (stack).Push(std::to_string( (setreq)->flow().data().classifier().i_vid())); \
+        (stack).Push(" classifier.i_vid=");                             \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_SRC_IP ) { \
+        (stack).Push( to_ip((setreq)->flow().data().classifier().src_ip()) ); \
+        (stack).Push(" classifier.src_ip=");                            \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_DST_IP ) { \
+        (stack).Push( to_ip((setreq)->flow().data().classifier().dst_ip()) ); \
+        (stack).Push(" classifier.dst_ip=");                            \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_DST_PORT ) { \
+        (stack).Push(std::to_string( (setreq)->flow().data().classifier().dst_port())); \
+        (stack).Push(" classifier.dst_port=");                          \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_SRC_PORT ) { \
+        (stack).Push(std::to_string( (setreq)->flow().data().classifier().src_port() )); \
+        (stack).Push(" classifier.src_port=");                          \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_O_PBITS ) { \
+        (stack).Push(std::to_string( (setreq)->flow().data().classifier().o_pbits()) ); \
+        (stack).Push(" classifier.o_pbits=");                           \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_O_VID ) { \
+    (stack).Push(std::to_string( (setreq)->flow().data().classifier().o_vid() ) ); \
+    (stack).Push(" classifier.o_vid=");                                 \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_IP_PROTO ) { \
+        (stack).Push(std::to_string( (setreq)->flow().data().classifier().ip_proto())); \
+        (stack).Push(" classifier.ip_proto=");                          \
+    }                                                                   \
+    if( (setreq)->flow().data().classifier().presence_mask() & BAL_CLASSIFIER_ID_ETHER_TYPE ) { \
+        (stack).Push(std::to_string( (setreq)->flow().data().classifier().ether_type() )); \
+        (stack).Push(" classifier.ether_type=");                        \
+    }                                                                   \
+    (stack).Push(std::to_string( (setreq)->flow().data().svc_port_id())); \
+    (stack).Push(" svc_port_id=");                                      \
+    (stack).Push(std::to_string( (setreq)->flow().data().sub_term_id())); \
+    (stack).Push(" sub_term_id=");                                      \
+    (stack).Push(std::to_string( (setreq)->flow().data().access_int_id())); \
+    (stack).Push(" access_int_id=");                                    \
+    (stack).Push(_a);                                                   \
+    (stack).Push(" admin_state=");                                      \
+    if ( (setreq)->flow().key().flow_type() == BAL_FLOW_TYPE_UPSTREAM ) { \
+        (stack).Push(std::to_string( (setreq)->flow().data().dba_tm_sched_id() ) ); \
+        (stack).Push(" queue.tm_sched_id=");                            \
+    }                                                                   \
+    (stack).Push(_f);                                                   \
+    (stack).Push(" flow_type=");                                        \
+    (stack).Push(std::to_string( (setreq)->flow().key().flow_id() ));   \
+    (stack).Push(" flow_id=");                                          \
+    (stack).Push(_o);                                                   \
+    (stack).Push("set object=");                                        \
+}while(0)
+
 #define STACK_OMCI_SAMPLE(stack) do {           \
     (stack).Push("bal/");                       \
     (stack).Push("..\n");                       \
@@ -142,7 +218,35 @@ static const char *transceiver_type_map[] = {"gpon_sps_43_48", "gpon_sps_sog_432
                                                  "xgpon_lth_7226_a_pc_plus"};
 
 static const char *flow_type_map[] = {"upstream", "downstream", "broadcast", "multicast"};
+
+static const char *pkt_tag_map[] = {"none", "untagged", "single_tag", "double_tag"};
+
+static const char *action_mask_map[] =  {"none", "add_outer_tag", "remove_outer_tag", "xlate_outer_tag", "xlate_two_tags",\
+                                         "discard_ds_bcast", "discard_ds_unknown", "add_two_tags", "remove_two_tags", "remark_pbits",\
+                                         "copy_pbits", "reverse_copy_pbits", "dscp_to_pbits", "trap_to_host"};
+
 static int bal_cli_fds[2];
+
+typedef unsigned int uint32;
+
+static std::string to_ip(uint32 val) {
+#define _V(i) ( ( (val) >> ( (i) * 8 ) ) & 0xff )
+
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d.%d.%d.%d", _V(3), _V(2), _V(1), _V(0));
+    return std::string(buf);
+
+#undef _V
+}
+
+static __inline__ int mask_to_shift(unsigned int mask) {
+    int shift = 0;
+    if(mask == 0) {
+        return 0;
+    }
+    for(shift = 0; (1 << shift) <= mask; shift++);
+    return shift;
+}
 
 static BalErrno BalAccTermInd(BalIndicationsClient *bal_ind_clnt,
                             const std::string device_id,
@@ -186,6 +290,10 @@ void balCfgSetCmdToCli(const BalCfg *cfg, BalErr *response, BalIndicationsClient
     else if(CHECK_OMCI_REQ(cfg, packet)) {
         cmd = CFG_OMCI_REQ;
         STACK_OMCI_REQ(stk, cfg, packet);
+    }
+    else if(CHECK_FLOW(cfg, hdr, flow)) {
+        cmd = CFG_FLOW;
+        STACK_FLOW(stk, cfg, hdr, flow);
     }
     else {
         err = BAL_ERR_PARM;
