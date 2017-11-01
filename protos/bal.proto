@@ -2366,6 +2366,17 @@ message BalErr {
     BalErrno err = 1;
 }
 
+enum BalRebootStatus
+{
+    BAL_OLT_UP_AFTER_REBOOT               =  0;
+    BAL_OLT_UP_AFTER_ACTIVATION           =  1;
+    BAL_OLT_STATUS_UNKNOWN                =  2;
+}
+
+message BalRebootState {
+    BalRebootStatus is_reboot = 1;
+}
+
 /**
  * BAL configuration object
  */
@@ -2386,6 +2397,14 @@ message BalCfg {
 
 message BalInit {
     string voltha_adapter_ip_port = 1;  // IP:port of the VOLTHA Adapter
+}
+
+message BalHeartbeat {
+    string device_id = 1;
+}
+
+message BalReboot {
+    string device_id = 1;
 }
 
 message BalKey {
@@ -2419,6 +2438,9 @@ service Bal {
     rpc BalCfgSet(BalCfg) returns(BalErr) {}
     rpc BalCfgClear(BalKey) returns(BalErr) {}
     rpc BalCfgGet(BalKey) returns(BalCfg) {}
+    rpc BalApiReboot(BalReboot) returns(BalErr) {}
+    rpc BalApiHeartbeat(BalHeartbeat) returns(BalRebootState) {}
+    rpc BalCfgStatGet(BalInterfaceKey) returns(BalInterfaceStat) {}
 }
 
 message BalIndications{
